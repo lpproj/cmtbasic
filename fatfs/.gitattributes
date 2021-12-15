@@ -1,0 +1,13 @@
+#
+*.txt text eol=crlf
+*.html text eol=crlf
+*.css text eol=crlf
+#
+*.h text eol=crlf
+*.c text eol=crlf
+
+#
+*.png -text
+*.xlsx -text
+*.zip -text
+
