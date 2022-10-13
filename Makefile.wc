@@ -1,0 +1,194 @@
+#
+# Makefile for (Open)Watcom's wmake.
+# to build:
+#   wmake -h -f Makefile.wc
+#
+
+.ERASE
+
+!ifdef __UNIX__
+HOST_CC=gcc
+WLIB_EXTRACT=:
+O=o
+D=/
+!else
+HOST_CC=owcc
+WLIB_EXTRACT=*
+O=obj
+D=\
+
+!endif
+
+A=lib
+X=.EXE
+RM_F=rm -f
+CP=copy
+
+BARE_INC=bare$(D)include
+BARE_SRCPATH=bare$(D)src
+
+MYPRINTF_BASE=xprintf
+MYPRINTF_INC=$(MYPRINTF_BASE)$(D)SRC
+MYPRINTF_SRCPATH=$(MYPRINTF_BASE)$(D)SRC
+MYPRINTF_SRCFILE=$(MYPRINTF_SRCPATH)$(D)xprintf.c
+
+#for BootProg.nec
+BOOTPROG_PATH=..$(D)BootProg
+BOOTSECT=bootsect.bin
+MKIMG=mkimg144.exe
+#HOST_CC=owcc
+NASM=nasm
+
+FATFS_BASE=fatfs
+FATFS_INC=$(FATFS_BASE)$(D)source
+FATFS_SRCPATH=$(FATFS_BASE)$(D)source
+FATFS_SRCFILE=$(FATFS_SRCPATH)$(D)ff.c
+FATFS_CFGFILE=$(FATFS_SRCPATH)$(D)ffconf.h
+
+CC=wcl
+CFLAGS_BASE=-zq -s -Fr -zp1 -os -bt=dos -mt -I.
+AS=wasm
+AFLAGS_BASE=-zq -fr -I.
+
+CFLAGS_DEBUG=-d1
+AFLAGS_DEBUG=-d1
+
+CFLAGS = &
+	$(CFLAGS_BASE) &
+	-DBARE_TINY &
+	-I$(BARE_INC) &
+	-I$(BARE_SRCPATH)$(D)watcom -I$(BARE_SRCPATH) &
+	-I$(MYPRINTF_INC) &
+	-I$(FATFS_INC) &
+	$(CFLAGS_DEBUG)
+
+AFLAGS = &
+	$(AFLAGS_BASE) &
+	-DBARE_TINY &
+	-I$(BARE_INC) &
+	-I$(BARE_SRCPATH)$(D)watcom -I$(BARE_SRCPATH) &
+	$(AFLAGS_DEBUG)
+
+COMPILE_BASE=*$(CC) $(CFLAGS_BASE) -c -fo=$^@ $[@
+COMPILE=*$(CC) $(CFLAGS) -c -fo=$^@ $[@
+ASSEMBLE_BASE=*$(AS) $(AFLAGS_BASE) -fo=$^@ $[@
+ASSEMBLE=*$(AS) $(AFLAGS) -fo=$^@ $[@
+
+BARELIB_OBJS = &
+	wc_stb.$(O) &
+	wc_i8x.$(O) &
+	wc_cstr.$(O) &
+	wc_vect.$(O) &
+	wc_i4d.$(O) &
+	wc_i4m.$(O) &
+
+FATFS_OBJS = wc_fatfs.$(O) wc_disk.$(O)
+MYPRINTF_OBJS = wc_prf.$(O)
+#
+
+PROG_OBJS = &
+	wc_bm.$(O) &
+	wc_tout.$(O) &
+	wc_hndl.$(O) &
+	wc_cmtb.$(O) &
+	wc_necio.$(O) &
+	
+#
+
+cmtbasic.com: $(PROG_OBJS) $(BARELIB_OBJS) $(MYPRINTF_OBJS) $(FATFS_OBJS)
+	wlink form dos com op quiet op caseexact op nod name $^@ op map f { $(BARELIB_OBJS) $(PROG_OBJS) $(FATFS_OBJS) $(MYPRINTF_OBJS) }
+
+bareimg:  bareimg.720 bareimg.2hc bareimg.2hd
+
+clean: .SYMBOLIC
+	-$(RM_F) $(PROG_OBJS)
+	-$(RM_F) $(BARELIB_OBJS)
+	-$(RM_F) $(FATFS_OBJS) $(MYPRINTF_OBJS)
+	-$(RM_F) cmtbasic.com cmtbasic.map
+	-$(RM_F) bareimg.720 bareimg.2hc startup.bin
+
+allclean: clean .SYMBOLIC
+	-$(RM_F) $(BOOTSECT) $(MKIMG) mkimg144.obj mkimg144.o
+
+wc_fatfs.$(O): $(FATFS_SRCFILE) $(FATFS_CFG)
+	$(COMPILE)
+
+wc_stb.$(O): $(BARE_SRCPATH)$(D)watcom$(D)start_b.asm
+	$(ASSEMBLE)
+
+wc_i8x.$(O): $(BARE_SRCPATH)$(D)watcom$(D)int86x.asm
+	$(ASSEMBLE)
+
+wc_vect.$(O): $(BARE_SRCPATH)$(D)watcom$(D)vect.asm
+	$(ASSEMBLE)
+
+wc_cstr.$(O): $(BARE_SRCPATH)$(D)c_str.c
+	$(COMPILE)
+
+# printf
+wc_prf.$(O): $(MYPRINTF_SRCFILE)
+	$(COMPILE)
+
+#
+wc_bm.$(O): b_main.c
+	$(COMPILE)
+
+wc_tout.$(O): mytxtout.c
+	$(COMPILE)
+
+wc_hndl.$(O): wc_hndl.asm
+	$(ASSEMBLE)
+
+#wc_buf.$(O): wc_buf.asm
+#	$(ASSEMBLE)
+
+wc_cmtb.$(O): cmtbasic.c
+	$(COMPILE)
+
+wc_necio.$(O): wc_necio.asm
+	$(ASSEMBLE)
+
+
+wc_disk.$(O): disk_n98.c
+	$(COMPILE)
+
+
+
+#
+# grab internal muldiv from clib
+LIBCDOS=$(%WATCOM)$(D)lib286$(D)dos$(D)clibs.lib
+
+wc_i4d.$(O): $(LIBCDOS)
+	wlib -q $(LIBCDOS) $(WLIB_EXTRACT)i4d=$^@
+
+wc_i4m.$(O): $(LIBCDOS)
+	wlib -q $(LIBCDOS) $(WLIB_EXTRACT)i4m=$^@
+
+
+#boot_2nd (startup.bin)
+
+startup.bin: cmtbasic.com
+	$(CP) $[@ $^@
+
+#bootprog: disk images
+
+bareimg.720: $(MKIMG) $(BOOTSECT) startup.bin blanknec.720
+	$(CP) blanknec.720 $^@
+	.$(D)$(MKIMG) -o $^@ -bs $(BOOTSECT) -f 720 startup.bin
+
+bareimg.2hc: $(MKIMG) $(BOOTSECT) startup.bin blanknec.2hc
+	$(CP) blanknec.2hc $^@
+	.$(D)$(MKIMG) -o $^@ -bs $(BOOTSECT) -f 2hc startup.bin
+
+bareimg.2hd: $(MKIMG) $(BOOTSECT) startup.bin blanknec.2hd
+	$(CP) blanknec.2hd $^@
+	.$(D)$(MKIMG) -o $^@ -bs $(BOOTSECT) -f 2hd startup.bin
+
+#bootprog: boot1st and mkimg
+
+$(BOOTSECT): $(BOOTPROG_PATH)$(D)bnec12f.asm
+	$(NASM) -f bin -o $^@ $[@
+
+$(MKIMG): $(BOOTPROG_PATH)$(D)mkimg144.c
+	$(HOST_CC) -o $^@ $[@
+
